@@ -3,3 +3,4 @@ StorageBench/reports/
 StorageBench/history/
 StorageBench/tools/
 *.tmp
+.tools/
