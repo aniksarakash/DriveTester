@@ -5,6 +5,9 @@
     side effects at load time (no output, no state mutation, no auto-run).
 #>
 
+# CRC-32 lookup table, filled by Get-Crc32 on first use.
+$script:SbCrcTable = $null
+
 function Format-Bytes {
     <# Binary units. 0 -> "0 B"; 320072933376 -> "298.1 GB". #>
     [OutputType([string])]
@@ -204,6 +207,8 @@ function Get-Crc32 {
     if ($Count -lt 0) { $Count = $Bytes.Length - $Offset }
     if ($Count -le 0) { return [uint32]0 }
 
+    # Built once, on first use. Declared at module scope below so StrictMode does
+    # not fault on reading it before it exists.
     if (-not $script:SbCrcTable) {
         $poly = [uint32]3987671650         # 0xEDB88320
         $tbl = [uint32[]]::new(256)

@@ -10,6 +10,10 @@
 $script:SbScratchDirName = '.storagebench-scratch'
 $script:SbRunIdPattern = '^[0-9]{8}-[0-9]{6}-[a-z0-9]{4}$'
 
+# Declared here rather than only in Set-ScratchOverride: StrictMode makes reading
+# an unset variable an error, and the getters read it on every call.
+$script:SbScratchOverride = $null
+
 function Get-ScratchRoot {
     <#
         Returns the scratch container for a volume: <X>:\.storagebench-scratch

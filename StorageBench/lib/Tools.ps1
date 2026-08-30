@@ -45,7 +45,11 @@ function Get-ToolsDir {
     [OutputType([string])]
     param()
     if ($script:SbToolsDirOverride) { return $script:SbToolsDirOverride }
-    if ($script:SbRootDir) { return (Join-Path $script:SbRootDir 'tools') }
+    # Set by StorageBench.ps1. It is absent when a module is dot-sourced on its
+    # own, and StrictMode turns reading an unset variable into an error, so ask
+    # for it rather than read it.
+    $root = Get-Variable -Name 'SbRootDir' -Scope Script -ValueOnly -ErrorAction Ignore
+    if ($root) { return (Join-Path $root 'tools') }
     Join-Path ([System.IO.Path]::GetTempPath()) 'StorageBenchTools'
 }
 
