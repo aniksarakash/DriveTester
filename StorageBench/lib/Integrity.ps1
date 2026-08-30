@@ -65,14 +65,7 @@ function New-PatternKeystream {
 
     $blocks = [int][math]::Ceiling($ByteCount / 16.0)
     $ctr = [byte[]]::new($blocks * 16)
-    $fi = [System.BitConverter]::GetBytes([int]$FileIdx)
-    $bi = [System.BitConverter]::GetBytes([long]$BlockIndex)
-    for ($i = 0; $i -lt $blocks; $i++) {
-        $o = $i * 16
-        [System.Array]::Copy($fi, 0, $ctr, $o, 4)
-        [System.Array]::Copy($bi, 0, $ctr, $o + 4, 8)
-        [System.Array]::Copy([System.BitConverter]::GetBytes([int]$i), 0, $ctr, $o + 12, 4)
-    }
+    [StorageBench.PatternHelper]::FillCtrCounters($ctr, $FileIdx, $BlockIndex, $blocks)
     $out = $Ctx.Encryptor.TransformFinalBlock($ctr, 0, $ctr.Length)
     if ($out.Length -eq $ByteCount) { return $out }
     $trim = [byte[]]::new($ByteCount)
@@ -89,16 +82,7 @@ function Set-PatternHeader {
         [Parameter(Mandatory)][int]$FileIdx,
         [Parameter(Mandatory)][long]$Offset
     )
-    [System.Array]::Copy($RunIdBytes, 0, $Buffer, $At, 16)
-    [System.Array]::Copy([System.BitConverter]::GetBytes([long]$FileIdx), 0, $Buffer, $At + 16, 8)
-    [System.Array]::Copy([System.BitConverter]::GetBytes([long]$Offset), 0, $Buffer, $At + 24, 8)
-    for ($i = 0; $i -lt 4; $i++) { $Buffer[$At + 32 + $i] = 0 }
-    [System.Array]::Copy($script:SbMagic, 0, $Buffer, $At + 36, 4)
-
-    $head = [byte[]]::new(40)
-    [System.Array]::Copy($Buffer, $At, $head, 0, 40)
-    $crc = Get-Crc32 -Bytes $head
-    [System.Array]::Copy([System.BitConverter]::GetBytes([uint32]$crc), 0, $Buffer, $At + 32, 4)
+    [StorageBench.PatternHelper]::StampHeader($Buffer, $At, $RunIdBytes, $FileIdx, $Offset)
 }
 
 function Read-PatternHeader {
@@ -206,7 +190,7 @@ function Get-SpanDigest {
     [OutputType([byte[]])]
     param(
         [Parameter(Mandatory)][byte[]]$Buffer,
-        [Parameter(Mandatory)][int]$Count
+        [int]$Count
     )
     if ($Count -eq $Buffer.Length) { return [System.Security.Cryptography.SHA256]::HashData($Buffer) }
     $tmp = [byte[]]::new($Count)
@@ -237,18 +221,12 @@ function New-PatternSpan {
     )
 
     $total = $BlockCount * $script:SbBlock
-    $buf = [System.GC]::AllocateArray[byte]($total, $true)
     $startIdx = [long]([math]::Floor($StartOffset / $script:SbBlock))
 
     # One keystream covering every block in the span, then headers stamped over it.
     $ks = New-PatternKeystream -Ctx $Ctx -FileIdx $FileIdx -BlockIndex $startIdx -ByteCount $total
-    [System.Array]::Copy($ks, 0, $buf, 0, $total)
-
-    for ($i = 0; $i -lt $BlockCount; $i++) {
-        Set-PatternHeader -Buffer $buf -At ($i * $script:SbBlock) `
-            -RunIdBytes $Ctx.RunIdBytes -FileIdx $FileIdx -Offset ($StartOffset + [long]$i * $script:SbBlock)
-    }
-    $buf
+    [StorageBench.PatternHelper]::StampHeaders($ks, $Ctx.RunIdBytes, $FileIdx, $StartOffset, $BlockCount, $script:SbBlock)
+    $ks
 }
 
 function Invoke-IntegrityScan {
@@ -361,7 +339,7 @@ function Invoke-IntegrityScan {
                 if ($got -le 0) { break }
 
                 $expected = New-PatternSpan -Ctx $ctx -FileIdx $f -StartOffset $off -BlockCount ([int]($got / $script:SbBlock))
-                if (-not (Test-DigestEqual (Get-SpanDigest -Buffer $actual -Count $expected.Length) (Get-SpanDigest -Buffer $expected -Count $expected.Length))) {
+                if (-not [StorageBench.PatternHelper]::ByteArraysEqual($actual, $expected, $expected.Length)) {
                     # Narrow it down to the offending block, then classify it.
                     $blocks = [int]($expected.Length / $script:SbBlock)
                     for ($b = 0; $b -lt $blocks; $b++) {

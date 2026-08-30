@@ -90,7 +90,7 @@ function Measure-ReadLatency {
     }
 }
 
-function Classify-Latency {
+function Get-LatencyClassification {
     <#
         Turn a latency profile into a media verdict.
         Returns @{Class;RPM;Confidence;Evidence}.
@@ -143,6 +143,8 @@ function Classify-Latency {
 
     @{ Class = $class; RPM = $rpm; Confidence = $conf; Evidence = @($ev) }
 }
+
+Set-Alias -Name Classify-Latency -Value Get-LatencyClassification -Scope Script -Force
 
 function Invoke-MediaClassification {
     <#
@@ -256,5 +258,5 @@ function Compare-ReportedVsMeasured {
         $note = "reported and measured agree: $measured"
     }
 
-    @{ Mismatch = [bool]$mismatch; Reported = $reported; Measured = $measured; Note = $note }
+    @{ Agrees = [bool](-not $mismatch); Mismatch = [bool]$mismatch; Reported = $reported; Measured = $measured; Note = $note }
 }

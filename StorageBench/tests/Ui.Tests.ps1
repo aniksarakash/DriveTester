@@ -252,3 +252,42 @@ Describe 'plain renderer output' {
         $c.Lines.Count | Should -BeGreaterThan 0
     }
 }
+
+Describe 'New-ProgressCallback' {
+    BeforeAll {
+        . (Join-Path (Split-Path -Parent $PSScriptRoot) 'StorageBench.ps1')
+    }
+
+    It 'formats standard two-argument progress updates without error' {
+        $c = New-CaptureUi
+        $cb = New-ProgressCallback -Ui $c.Ui -Label 'Testing callback'
+        { & $cb 50 100 } | Should -Not -Throw
+        ($c.Lines -join "`n") | Should -Match '50\.0%'
+    }
+
+    It 'formats hashtable dictionary progress updates with speed and phase' {
+        $c = New-CaptureUi
+        $cb = New-ProgressCallback -Ui $c.Ui -Label 'Writing file'
+        { & $cb @{ WrittenBytes = 50MB; TotalBytes = 100MB; MBps = 125.5; Phase = 'writing' } } | Should -Not -Throw
+        $text = $c.Lines -join "`n"
+        $text | Should -Match '50\.0%'
+        $text | Should -Match '125\.5 MB/s'
+    }
+
+    It 'works cleanly in an isolated script scope' {
+        $sbScript = Join-Path (Split-Path -Parent $PSScriptRoot) 'StorageBench.ps1'
+        $script = {
+            param($ScriptPath)
+            . $ScriptPath
+            $lines = [System.Collections.Generic.List[string]]::new()
+            $sink = { param($l) $lines.Add([string]$l) }.GetNewClosure()
+            $ui = New-Ui -Mode 'plain' -Sink $sink
+            $cb = New-ProgressCallback -Ui $ui -Label 'Isolated Scope Probe'
+            & $cb 25 100
+            $lines -join "`n"
+        }
+        $res = & pwsh -NoProfile -Command $script -args $sbScript
+        $res | Should -Match '25\.0%'
+    }
+}
+

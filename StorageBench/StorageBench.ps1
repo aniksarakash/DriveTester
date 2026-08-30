@@ -251,6 +251,10 @@ function Update-PlanForClass {
                 $Plan.Notes += 'zone profile raised to 8 - track position is the clearest signal a platter gives'
                 $Plan.Zones = 8
             }
+            if ($Plan.IntegrityMB -gt 2048 -and $Plan.Name -ne 'Certify') {
+                $Plan.Notes += "integrity pass trimmed from $(Format-Bytes -Bytes ([long]$Plan.IntegrityMB * 1MB)) to 2.0 GB - at platter write speed the full span would blow the preset time budget"
+                $Plan.IntegrityMB = 2048
+            }
         }
         'SSD' {
             $want = if ($usb) { 16 } else { 32 }
@@ -311,7 +315,14 @@ function New-ProgressCallback {
     [OutputType([scriptblock])]
     param([Parameter(Mandatory)]$Ui, [Parameter(Mandatory)][string]$Label)
 
-    $state = @{ Ui = $Ui; Label = $Label; Start = [datetime]::Now }
+    $state = @{
+        Ui             = $Ui
+        Label          = $Label
+        Start          = [datetime]::Now
+        FormatMbps     = (Get-Command Format-Mbps).ScriptBlock
+        GetPct         = (Get-Command Get-Pct).ScriptBlock
+        FormatDuration = (Get-Command Format-Duration).ScriptBlock
+    }
     {
         param($a, $b)
 
@@ -320,16 +331,16 @@ function New-ProgressCallback {
             if ($a.Contains('WrittenBytes')) { $cur = [double]$a['WrittenBytes'] }
             elseif ($a.Contains('Bytes')) { $cur = [double]$a['Bytes'] }
             if ($a.Contains('TotalBytes') -and $a['TotalBytes']) { $total = [double]$a['TotalBytes'] }
-            if ($a.Contains('MBps') -and $a['MBps']) { $extra = Format-Mbps -MBps $a['MBps'] }
+            if ($a.Contains('MBps') -and $a['MBps']) { $extra = & ($state.FormatMbps) -MBps $a['MBps'] }
             if ($a.Contains('Phase') -and $a['Phase']) { $extra = (@([string]$a['Phase'], $extra) | Where-Object { $_ }) -join ' ' }
         } else {
             $cur = if ($null -eq $a) { 0.0 } else { [double]$a }
             $total = if ($null -eq $b) { 0.0 } else { [double]$b }
         }
 
-        $pct = if ($total -gt 0) { Get-Pct -Current $cur -Total $total } else { 0.0 }
+        $pct = if ($total -gt 0) { & ($state.GetPct) -Current $cur -Total $total } else { 0.0 }
         $elapsed = ([datetime]::Now - $state.Start).TotalSeconds
-        $eta = if ($pct -ge 2 -and $elapsed -ge 2) { 'eta ' + (Format-Duration -Seconds ((($elapsed / $pct) * (100.0 - $pct)))) } else { '' }
+        $eta = if ($pct -ge 2 -and $elapsed -ge 2) { 'eta ' + (& ($state.FormatDuration) -Seconds ((($elapsed / $pct) * (100.0 - $pct)))) } else { '' }
         $tail = (@($extra, $eta) | Where-Object { $_ }) -join '  '
         $state.Ui.Progress($pct, $state.Label, $tail)
     }.GetNewClosure()
@@ -741,9 +752,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     $sbHandler = $null
     try {
         $sbHandler = [ConsoleCancelEventHandler] {
-            param($sender, $e)
+            param($source, $eventArgs)
             # Cancel the kill so the finally block still gets to clean up.
-            $e.Cancel = $true
+            $eventArgs.Cancel = $true
             $sbFlagsRef['Cancelled'] = $true
             Write-Host ''
             Write-Host 'Interrupt received - finishing the current step, then cleaning up.'
