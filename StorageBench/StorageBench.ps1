@@ -752,9 +752,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     $sbHandler = $null
     try {
         $sbHandler = [ConsoleCancelEventHandler] {
-            param($source, $eventArgs)
+            param($src, $cancelArgs)
             # Cancel the kill so the finally block still gets to clean up.
-            $eventArgs.Cancel = $true
+            $cancelArgs.Cancel = $true
             $sbFlagsRef['Cancelled'] = $true
             Write-Host ''
             Write-Host 'Interrupt received - finishing the current step, then cleaning up.'

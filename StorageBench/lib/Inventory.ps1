@@ -84,7 +84,7 @@ function Get-DriveInventory {
     $source = if ($phys.Count -gt 0) { $phys } else { $w32 }
 
     foreach ($p in $source) {
-        $num = if ($null -ne $p.DeviceId) { [int]$p.DeviceId } elseif ($p.Index -ne $null) { [int]$p.Index } else { -1 }
+        $num = if ($null -ne $p.DeviceId) { [int]$p.DeviceId } elseif ($null -ne $p.Index) { [int]$p.Index } else { -1 }
         $w = $w32 | Where-Object { $_.Index -eq $num } | Select-Object -First 1
         $d = $disks | Where-Object { [int]$_.Number -eq $num } | Select-Object -First 1
 
