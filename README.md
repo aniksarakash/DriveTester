@@ -17,6 +17,11 @@ cd StorageBench
 pwsh .\StorageBench.ps1 -Drive D -Preset Quick
 ```
 
+Start with `-DryRun`: it resolves the drive, prints the exact plan, and writes
+nothing. For a step-by-step walkthrough — choosing a preset, reading the
+verdict, interrupting a run, and what to do when something is refused — see
+**[docs/RUNNING.md](docs/RUNNING.md)**.
+
 ## Requirements
 
 - Windows, PowerShell 7.0 or newer (`pwsh`).
