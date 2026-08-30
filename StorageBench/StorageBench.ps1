@@ -142,6 +142,9 @@ function Get-PresetPlan {
     $plan.DoIntegrity = -not $SkipIntegrity
     $plan.DoSmart = -not $SkipSmart
     $plan.Notes = @()
+    # Retuned by Update-PlanForClass once the drive has been classified; stays
+    # 'generic' when classification is skipped or fails.
+    $plan.Method = 'generic'
 
     if (-not $plan.DoBench) {
         $plan.BenchBytes = 0L; $plan.Qd1Samples = 0; $plan.QdNSamples = 0
@@ -179,6 +182,111 @@ function Get-PresetPlan {
     $plan.NeedBytes = $concurrent + ([long]$plan.IntegrityMB * 1MB)
     $plan.ReserveBytes = [long]$reserve
     $plan
+}
+
+function Update-PlanForClass {
+    <#
+        Retunes the plan once the drive has said what it is.
+
+        The same test is not equally informative on every medium, and the run
+        has a fixed time budget, so spending it identically on a platter and on
+        PCIe flash wastes both. What changes and why:
+
+          queue depth   A mechanical drive has one head. Thirty-two outstanding
+                        requests do not make it seek in parallel, they just
+                        queue, so the number measured is the scheduler's, not
+                        the drive's. Flash has many channels and only shows its
+                        real throughput when the queue is deep.
+          QDN samples   An HDD serves roughly a hundred random reads a second.
+                        The 2048 samples that take an NVMe two seconds take a
+                        platter half a minute, for a number already known after
+                        a few hundred.
+          zone profile  Outer tracks are genuinely faster than inner ones - it
+                        is the clearest signal a platter gives. On flash the
+                        same sweep measures the cache, so it stays but says so.
+          sustained     The point of a long write on flash is to run the SLC
+                        cache dry and find the cliff. A platter has no cliff to
+                        find, only a small buffer, so the write is capped.
+          surface       Weak sectors are a property of magnetic media. On flash
+                        the sweep is a remap check, which needs fewer regions.
+
+        Pure: takes a plan, returns the adjusted plan. Every change appends a
+        note, so the report can always say why it measured what it measured.
+    #>
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][hashtable]$Plan,
+        [Parameter(Mandatory)][AllowNull()][AllowEmptyString()][string]$MeasuredClass,
+        [string]$BusType = ''
+    )
+
+    $Plan.Method = 'generic'
+    if (-not $MeasuredClass -or $MeasuredClass -eq 'Unknown') {
+        $Plan.Notes += 'the medium could not be identified, so the preset was run as written'
+        return $Plan
+    }
+
+    $Plan.Method = $MeasuredClass
+    $usb = ($BusType -eq 'USB')
+
+    switch ($MeasuredClass) {
+        'HDD' {
+            if ($Plan.QueueDepth -gt 4) {
+                $Plan.Notes += "queue depth cut from $($Plan.QueueDepth) to 4 - one head cannot serve a deeper queue, so anything more measures the scheduler"
+                $Plan.QueueDepth = 4
+            }
+            if ($Plan.QdNSamples -gt 256) {
+                $Plan.Notes += "random QDN samples cut from $($Plan.QdNSamples) to 256 - at platter speed the rest would add minutes and not precision"
+                $Plan.QdNSamples = 256
+            }
+            if ($Plan.Qd1Samples -gt 512) {
+                $Plan.Notes += "random QD1 samples cut from $($Plan.Qd1Samples) to 512 for the same reason"
+                $Plan.Qd1Samples = 512
+            }
+            if ($Plan.SustainedBytes -gt 2GB) {
+                $Plan.Notes += "sustained write capped at 2.0 GB - a platter has no SLC cache to exhaust, only a small buffer"
+                $Plan.SustainedBytes = 2GB
+            }
+            if ($Plan.Zones -lt 8) {
+                $Plan.Notes += 'zone profile raised to 8 - track position is the clearest signal a platter gives'
+                $Plan.Zones = 8
+            }
+        }
+        'SSD' {
+            $want = if ($usb) { 16 } else { 32 }
+            if ($Plan.QueueDepth -lt $want -and $Plan.QdNSamples -gt 0) {
+                $Plan.Notes += "queue depth raised from $($Plan.QueueDepth) to $want - solid state only shows its throughput with the queue full"
+                $Plan.QueueDepth = $want
+            }
+            if ($Plan.SurfaceRegions -gt 32) {
+                $Plan.Notes += "surface regions cut from $($Plan.SurfaceRegions) to 32 - flash has no weak tracks, so this is a remap check rather than a survey"
+                $Plan.SurfaceRegions = 32
+            }
+            if ($Plan.Zones -gt 0) {
+                $Plan.Notes += 'the zone profile is kept, but on flash it measures cache behaviour rather than geometry'
+            }
+        }
+        'NVMe' {
+            if ($Plan.QueueDepth -lt 32 -and $Plan.QdNSamples -gt 0) {
+                $Plan.Notes += "queue depth raised from $($Plan.QueueDepth) to 32 - PCIe flash is idle at a shallow queue"
+                $Plan.QueueDepth = 32
+            }
+            if ($Plan.QdNSamples -gt 0 -and $Plan.QdNSamples -lt 1024) {
+                $Plan.Notes += "random QDN samples raised from $($Plan.QdNSamples) to 1024 - each one costs microseconds here, and the extra depth is where the number lives"
+                $Plan.QdNSamples = 1024
+            }
+            if ($Plan.SurfaceRegions -gt 32) {
+                $Plan.Notes += "surface regions cut from $($Plan.SurfaceRegions) to 32 - flash has no weak tracks, so this is a remap check rather than a survey"
+                $Plan.SurfaceRegions = 32
+            }
+            if ($Plan.Zones -gt 0) {
+                $Plan.Notes += 'the zone profile is kept, but on flash it measures cache behaviour rather than geometry'
+            }
+        }
+    }
+
+    $Plan.DoSurface = ($Plan.SurfaceRegions -gt 0)
+    $Plan
 }
 
 function Get-RunExitCode {
@@ -419,6 +527,13 @@ function Invoke-StorageBenchRun {
                     $ui.Metric('Confidence', $classification.Confidence, $(if ($classification.Confidence -in @('low', 'none')) { 'warn' } else { 'ok' }))
                     $rvm = Compare-ReportedVsMeasured -DiskInfo $disk -Classification $classification
                     if ($rvm -and -not $rvm.Agrees) { $ui.Warn($rvm.Note) }
+
+                    # The drive has now told us what it is, so the rest of the
+                    # run is retuned to suit it before a byte of it happens.
+                    $before = @($plan.Notes).Count
+                    $plan = Update-PlanForClass -Plan $plan -MeasuredClass ([string]$classification.Class) -BusType ([string]$disk.BusType)
+                    $ui.Metric('Method', "tuned for $($plan.Method)", 'ok')
+                    foreach ($n in @($plan.Notes) | Select-Object -Skip $before) { $ui.Note($n) }
                 } else {
                     $ui.Warn("classification could not run: $($classification.Reason)")
                 }

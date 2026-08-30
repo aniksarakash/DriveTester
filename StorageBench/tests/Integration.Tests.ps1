@@ -98,6 +98,65 @@ Describe 'The preset plan' {
     }
 }
 
+Describe 'The method, retuned for what the drive turned out to be' {
+    BeforeEach {
+        $script:base = Get-PresetPlan -Preset 'Thorough' -VolumeBytes 500GB -FreeBytes 400GB
+    }
+
+    It 'stops asking a platter for a deep queue' {
+        $p = Update-PlanForClass -Plan $script:base -MeasuredClass 'HDD' -BusType 'USB'
+        $p.Method | Should -Be 'HDD'
+        $p.QueueDepth | Should -Be 4
+        $p.QdNSamples | Should -BeLessOrEqual 256
+        ($p.Notes -join ' ') | Should -Match 'one head'
+    }
+
+    It 'caps a platter''s sustained write, having no cache to exhaust' {
+        $p = Update-PlanForClass -Plan $script:base -MeasuredClass 'HDD' -BusType 'SATA'
+        $p.SustainedBytes | Should -BeLessOrEqual 2GB
+        $p.Zones | Should -BeGreaterOrEqual 8
+    }
+
+    It 'fills the queue for PCIe flash instead of emptying it' {
+        $p = Update-PlanForClass -Plan $script:base -MeasuredClass 'NVMe' -BusType 'NVMe'
+        $p.Method | Should -Be 'NVMe'
+        $p.QueueDepth | Should -BeGreaterOrEqual 32
+        $p.QdNSamples | Should -BeGreaterOrEqual 1024
+    }
+
+    It 'spends fewer regions on a surface that has no tracks' {
+        $p = Update-PlanForClass -Plan $script:base -MeasuredClass 'NVMe' -BusType 'NVMe'
+        $p.SurfaceRegions | Should -BeLessOrEqual 32
+        $p.DoSurface | Should -BeTrue
+        ($p.Notes -join ' ') | Should -Match 'remap check'
+    }
+
+    It 'keeps a USB SSD at a queue its bridge can actually carry' {
+        $p = Update-PlanForClass -Plan (Get-PresetPlan -Preset 'Standard' -VolumeBytes 500GB -FreeBytes 400GB) `
+            -MeasuredClass 'SSD' -BusType 'USB'
+        $p.Method | Should -Be 'SSD'
+        $p.QueueDepth | Should -Be 16
+    }
+
+    It 'runs the preset as written when the medium is unknown' {
+        $p = Update-PlanForClass -Plan $script:base -MeasuredClass 'Unknown' -BusType 'USB'
+        $p.Method | Should -Be 'generic'
+        $p.QueueDepth | Should -Be 32
+        $p.QdNSamples | Should -Be 1024
+        ($p.Notes -join ' ') | Should -Match 'could not be identified'
+    }
+
+    It 'never asks for more bytes than the preset already cleared with the reserve' {
+        foreach ($cls in 'HDD', 'SSD', 'NVMe', 'Unknown') {
+            $plan = Get-PresetPlan -Preset 'Thorough' -VolumeBytes 500GB -FreeBytes 400GB
+            $was = $plan.NeedBytes
+            $p = Update-PlanForClass -Plan $plan -MeasuredClass $cls -BusType 'SATA'
+            ([long]$p.ClassifyBytes + [long]$p.BenchBytes + [long]$p.SustainedBytes + ([long]$p.IntegrityMB * 1MB)) |
+                Should -BeLessOrEqual $was
+        }
+    }
+}
+
 Describe 'The process exit code' {
     It 'passes the grade''s own code through' {
         Get-RunExitCode -Grade @{ ExitCode = 0 } | Should -Be 0
