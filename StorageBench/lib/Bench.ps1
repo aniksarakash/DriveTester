@@ -313,7 +313,23 @@ function Measure-RandomQdN {
     }
 
     $offsets = Get-AlignedOffsets -FileBytes $open.Stream.Length -Block $Block -Count $Samples -Seed 0x0FF5E8
-    $buffers = @(1..$QueueDepth | ForEach-Object { [System.GC]::AllocateArray[byte]($Block, $true) })
+    # Built in a loop, not a pipeline: `@(1..n | ForEach-Object { [byte[]] })`
+    # unrolls each array into its individual bytes, so what looks like N buffers
+    # of $Block is really one flat array of N*$Block singles - and every read
+    # then goes out with a one-byte buffer, which an unbuffered handle refuses.
+    $buffers = [System.Collections.Generic.List[byte[]]]::new()
+    for ($b = 0; $b -lt $QueueDepth; $b++) {
+        $buffers.Add([System.GC]::AllocateArray[byte]($Block, $true))
+    }
+
+    # Reads go through RandomAccess on the raw handle, not through the stream.
+    # A FileStream carries one shared file position, so N concurrent ReadAsync
+    # calls race for it and hand the driver an offset nobody aligned - which an
+    # unbuffered handle rejects outright with "the parameter is incorrect".
+    # RandomAccess takes the offset per call, so each request is independently
+    # aligned, and the reads land where Get-AlignedOffsets put them instead of
+    # walking the file in order.
+    $handle = $open.Stream.SafeFileHandle
     $batchLat = [System.Collections.Generic.List[double]]::new()
     $wall = [System.Diagnostics.Stopwatch]::StartNew()
     $done = 0
@@ -326,7 +342,7 @@ function Measure-RandomQdN {
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
             for ($q = 0; $q -lt $n; $q++) {
                 $mem = [System.Memory[byte]]::new($buffers[$q])
-                $tasks.Add($open.Stream.ReadAsync($mem, [System.Threading.CancellationToken]::None).AsTask())
+                $tasks.Add([System.IO.RandomAccess]::ReadAsync($handle, $mem, $offsets[$i + $q]).AsTask())
             }
             [System.Threading.Tasks.Task]::WaitAll($tasks.ToArray())
             $sw.Stop()

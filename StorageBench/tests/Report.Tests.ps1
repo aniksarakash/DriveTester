@@ -41,7 +41,9 @@ BeforeAll {
             SizeBytes = 2000363192320; FreeBytes = 1200000000000; ClusterBytes = 4096
         }
         Classification     = @{
-            Class = 'HDD'; RPM = 5400; Confidence = 0.86
+            # A word, not a decimal - this is what Classify-Latency actually
+            # returns, and a numeric fixture here once hid a crash in the HTML.
+            Class = 'HDD'; RPM = 5400; Confidence = 'high'
             Evidence = @('avg random read 8.437 ms', 'p99 15.877 ms')
             Latency = @{ AvgMs = 8.437; P50 = 7.9; P95 = 14.2; P99 = 15.877; MaxMs = 41.2; SeekSlopeMsPerGB = 0.0031 }
         }

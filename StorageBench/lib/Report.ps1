@@ -261,7 +261,11 @@ function Get-HtmlRows {
         if ($null -eq $r) { continue }
         $val = $r.Value
         if ($null -eq $val -or ([string]$val) -eq '') { continue }
-        $note = if ($r.Note) { ConvertTo-HtmlText -Text $r.Note } else { '' }
+        # Most rows carry no note, and under the StrictMode 3.0 the entry point
+        # sets, reading a key a hashtable does not have is an error rather than
+        # $null - so ask whether it is there before reading it.
+        $hasNote = if ($r -is [System.Collections.IDictionary]) { $r.Contains('Note') } else { $null -ne $r.PSObject.Properties['Note'] }
+        $note = if ($hasNote -and $r.Note) { ConvertTo-HtmlText -Text $r.Note } else { '' }
         [void]$sb.Append(('<tr><th>{0}</th><td class="num">{1}</td><td class="note">{2}</td></tr>' -f
             (ConvertTo-HtmlText -Text $r.Name), (ConvertTo-HtmlText -Text $val), $note))
     }
@@ -480,7 +484,10 @@ function Export-RunHtml {
                 $conf = Get-ResultField -Object $cls -Path 'Confidence'
                 $b = @()
                 if ($rpm) { $b += "$rpm RPM" }
-                if ($null -ne $conf) { $b += ('confidence {0:0.00}' -f [double]$conf) }
+                # Classify-Latency reports confidence as a word - none, low,
+                # medium, high - not a number. Formatting it as a double threw
+                # on every real run; only the test fixture ever held a decimal.
+                if ($conf) { $b += "confidence $conf" }
                 $b -join ', ')
         }
         @{ Name = 'Volume'; Value = $(
