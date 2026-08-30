@@ -4,3 +4,6 @@ StorageBench/history/
 StorageBench/tools/
 *.tmp
 .tools/
+
+# Saved Claude Code session transcripts (local scratch, not source)
+StorageBench/*-this-session-is-being-continued-*.txt
