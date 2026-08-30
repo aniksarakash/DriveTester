@@ -16,8 +16,9 @@ function Get-CimSafe {
     try {
         $p = @{ ClassName = $ClassName; Namespace = $Namespace; ErrorAction = 'Stop' }
         if ($Filter) { $p.Filter = $Filter }
-        return @(Get-CimInstance @p)
-    } catch { return @() }
+        $res = @(Get-CimInstance @p)
+        return ,$res
+    } catch { return ,@() }
 }
 
 function Get-BusTypeName {

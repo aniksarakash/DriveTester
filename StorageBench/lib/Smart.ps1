@@ -205,9 +205,9 @@ function Get-SmartViaWmi {
 
     $res = @{ Ok = $false; Attributes = @(); Overall = $null; Notes = @() }
 
-    $data = Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictData' -Namespace 'root\wmi'
-    $thr = Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictThresholds' -Namespace 'root\wmi'
-    $status = Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictStatus' -Namespace 'root\wmi'
+    $data = @(Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictData' -Namespace 'root\wmi')
+    $thr = @(Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictThresholds' -Namespace 'root\wmi')
+    $status = @(Get-CimSafe -ClassName 'MSStorageDriver_FailurePredictStatus' -Namespace 'root\wmi')
     if ($data.Count -eq 0) { $res.Notes += 'MSStorageDriver_FailurePredictData unavailable (needs admin; most USB bridges never expose it)'; return $res }
 
     $want = "PHYSICALDRIVE$DiskNumber"
@@ -373,7 +373,7 @@ function Get-SmartReport {
     }
 
     # 4. The one-word health status.
-    if ($report.Attributes.Count -eq 0) {
+    if (@($report.Attributes).Count -eq 0) {
         $hs = if ($DiskInfo -and $DiskInfo.HealthStatus) { [string]$DiskInfo.HealthStatus } else { 'Unknown' }
         $report.Source = 'healthstatus'
         $report.Overall = switch ($hs) { 'Healthy' { 'PASSED' } 'Unhealthy' { 'FAILED' } 'Warning' { 'WARN' } default { $null } }
