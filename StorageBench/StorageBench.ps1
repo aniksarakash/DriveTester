@@ -167,7 +167,8 @@ function Get-PresetPlan {
         if ($plan.IntegrityMB -gt 0) {
             $plan.Notes += "certify sized the integrity pass at $(Format-Bytes -Bytes ([long]$plan.IntegrityMB * 1MB)) - all the free space it is allowed to use"
         }
-    } elseif ($plan.DoIntegrity -and ([long]$plan.IntegrityMB * 1MB) -gt $budget) {
+    }
+    elseif ($plan.DoIntegrity -and ([long]$plan.IntegrityMB * 1MB) -gt $budget) {
         $was = [long]$plan.IntegrityMB * 1MB
         $plan.IntegrityMB = if ($budget -gt 0) { [int][math]::Floor($budget / 1MB) } else { 0 }
         $plan.Notes += "integrity trimmed from $(Format-Bytes -Bytes $was) to $(Format-Bytes -Bytes ([long]$plan.IntegrityMB * 1MB)) to stay clear of the $(Format-Bytes -Bytes $reserve) reserve"
@@ -333,7 +334,8 @@ function New-ProgressCallback {
             if ($a.Contains('TotalBytes') -and $a['TotalBytes']) { $total = [double]$a['TotalBytes'] }
             if ($a.Contains('MBps') -and $a['MBps']) { $extra = & ($state.FormatMbps) -MBps $a['MBps'] }
             if ($a.Contains('Phase') -and $a['Phase']) { $extra = (@([string]$a['Phase'], $extra) | Where-Object { $_ }) -join ' ' }
-        } else {
+        }
+        else {
             $cur = if ($null -eq $a) { 0.0 } else { [double]$a }
             $total = if ($null -eq $b) { 0.0 } else { [double]$b }
         }
@@ -466,7 +468,8 @@ function Invoke-StorageBenchRun {
     $toolState = Get-ToolState
     if ($FetchTools -and $NoNet) {
         $toolState.Warnings += '-FetchTools was ignored because -NoNet forbids network access'
-    } elseif ($FetchTools -and -not $DryRun) {
+    }
+    elseif ($FetchTools -and -not $DryRun) {
         foreach ($t in 'Smartctl', 'DiskSpd') {
             if (-not $toolState[$t].Ok) { $null = Invoke-ToolFetch -Tool $t -Consented }
         }
@@ -545,10 +548,12 @@ function Invoke-StorageBenchRun {
                     $plan = Update-PlanForClass -Plan $plan -MeasuredClass ([string]$classification.Class) -BusType ([string]$disk.BusType)
                     $ui.Metric('Method', "tuned for $($plan.Method)", 'ok')
                     foreach ($n in @($plan.Notes) | Select-Object -Skip $before) { $ui.Note($n) }
-                } else {
+                }
+                else {
                     $ui.Warn("classification could not run: $($classification.Reason)")
                 }
-            } catch { $errors.Add("classify: $($_.Exception.Message)"); $ui.Warn("classify failed: $($_.Exception.Message)") }
+            }
+            catch { $errors.Add("classify: $($_.Exception.Message)"); $ui.Warn("classify failed: $($_.Exception.Message)") }
         }
 
         if ($plan.DoSmart -and -not (Test-SbCancelled)) {
@@ -560,7 +565,8 @@ function Invoke-StorageBenchRun {
                 if ($null -ne $smart.PowerOnHours) { $ui.Metric('Power-on', "$($smart.PowerOnHours) hours", 'ok') }
                 foreach ($f in @($smart.Failures)) { $ui.Warn($f) }
                 foreach ($n in @($smart.Notes)) { $ui.Note($n) }
-            } catch { $errors.Add("smart: $($_.Exception.Message)"); $ui.Warn("health read failed: $($_.Exception.Message)") }
+            }
+            catch { $errors.Add("smart: $($_.Exception.Message)"); $ui.Warn("health read failed: $($_.Exception.Message)") }
         }
 
         if ($plan.DoBench -and -not (Test-SbCancelled)) {
@@ -615,7 +621,8 @@ function Invoke-StorageBenchRun {
                     $ui.EndProgress()
                     $ui.Sparkline(@($bench.Zones.ZoneMBps), 'MB/s by zone, outer to inner')
                 }
-            } catch { $errors.Add("bench: $($_.Exception.Message)"); $ui.Warn("benchmark failed: $($_.Exception.Message)") }
+            }
+            catch { $errors.Add("bench: $($_.Exception.Message)"); $ui.Warn("benchmark failed: $($_.Exception.Message)") }
         }
 
         if ($plan.DoIntegrity -and -not (Test-SbCancelled)) {
@@ -628,7 +635,8 @@ function Invoke-StorageBenchRun {
                 if (@($integrity.Errors).Count -gt 0) { $ui.Warn("$(@($integrity.Errors).Count) block(s) did not read back as written") }
                 if ($integrity.CounterfeitSuspected) { $ui.Warn('distant blocks returned identical content - this drive may not hold the capacity it claims') }
                 if (-not $integrity.Ok -and $integrity.Reason) { $ui.Warn($integrity.Reason) }
-            } catch { $errors.Add("integrity: $($_.Exception.Message)"); $ui.Warn("integrity scan failed: $($_.Exception.Message)") }
+            }
+            catch { $errors.Add("integrity: $($_.Exception.Message)"); $ui.Warn("integrity scan failed: $($_.Exception.Message)") }
         }
 
         if ($plan.DoSurface -and -not (Test-SbCancelled)) {
@@ -640,7 +648,8 @@ function Invoke-StorageBenchRun {
                 $ui.BlockMap(@($surface.Regions), $true)
                 $ui.Metric('Regions', "$(@($surface.Regions).Count) read, $($surface.WeakCount) weak, $(@($surface.Errors).Count) unreadable",
                     $(if (@($surface.Errors).Count -gt 0) { 'fail' } elseif ($surface.WeakCount -gt 0) { 'warn' } else { 'ok' }))
-            } catch { $errors.Add("surface: $($_.Exception.Message)"); $ui.Warn("surface scan failed: $($_.Exception.Message)") }
+            }
+            catch { $errors.Add("surface: $($_.Exception.Message)"); $ui.Warn("surface scan failed: $($_.Exception.Message)") }
         }
 
         if (Test-SbCancelled) { $errors.Add('the run was interrupted before every phase finished') }
@@ -668,14 +677,14 @@ function Invoke-StorageBenchRun {
         $finished = [datetime]::Now
         $record = [ordered]@{
             Meta               = [ordered]@{
-                Tool        = 'StorageBench'; Version = $script:SbVersion
-                RunId       = $session.RunId
-                StartedAt   = $started.ToString('o'); FinishedAt = $finished.ToString('o')
+                Tool = 'StorageBench'; Version = $script:SbVersion
+                RunId = $session.RunId
+                StartedAt = $started.ToString('o'); FinishedAt = $finished.ToString('o')
                 DurationSec = [math]::Round(($finished - $started).TotalSeconds, 1)
-                Preset      = $plan.Name; Drive = ([string]$letter)
-                Machine     = [Environment]::MachineName
-                PSVersion   = $PSVersionTable.PSVersion.ToString()
-                Elevated    = (Get-IsAdmin); Interrupted = (Test-SbCancelled)
+                Preset = $plan.Name; Drive = ([string]$letter)
+                Machine = [Environment]::MachineName
+                PSVersion = $PSVersionTable.PSVersion.ToString()
+                Elevated = (Get-IsAdmin); Interrupted = (Test-SbCancelled)
             }
             Disk               = $disk
             Volume             = $volume
@@ -708,37 +717,41 @@ function Invoke-StorageBenchRun {
             $jsonPath = Export-RunJson -Results $record -OutDir $outDir
             $htmlPath = Export-RunHtml -Results $record -OutDir $outDir
             Update-History -Serial ([string]$disk.SerialNumber) -Line ([ordered]@{
-                    RunId           = $session.RunId; Preset = $plan.Name; Drive = ([string]$letter)
-                    Grade           = $grade.Letter; Score01 = $grade.Score01; Class = $class
-                    SeqReadMBps     = $(if ($bench -and $bench.SeqRead) { $bench.SeqRead.MBps } else { $null })
-                    SeqWriteMBps    = $(if ($bench -and $bench.SeqWrite) { $bench.SeqWrite.MBps } else { $null })
-                    Qd1IOPS         = $(if ($bench -and $bench.RndQd1) { $bench.RndQd1.IOPS } else { $null })
-                    SmartStatus     = $(if ($smart) { $smart.Status } else { 'not read' })
-                    IntegrityMB     = $(if ($integrity) { $integrity.VerifiedMB } else { 0 })
+                    RunId = $session.RunId; Preset = $plan.Name; Drive = ([string]$letter)
+                    Grade = $grade.Letter; Score01 = $grade.Score01; Class = $class
+                    SeqReadMBps = $(if ($bench -and $bench.SeqRead) { $bench.SeqRead.MBps } else { $null })
+                    SeqWriteMBps = $(if ($bench -and $bench.SeqWrite) { $bench.SeqWrite.MBps } else { $null })
+                    Qd1IOPS = $(if ($bench -and $bench.RndQd1) { $bench.RndQd1.IOPS } else { $null })
+                    SmartStatus = $(if ($smart) { $smart.Status } else { 'not read' })
+                    IntegrityMB = $(if ($integrity) { $integrity.VerifiedMB } else { 0 })
                     IntegrityErrors = $(if ($integrity) { @($integrity.Errors).Count } else { 0 })
                 })
             $ui.Note("json  $jsonPath")
             $ui.Note("html  $htmlPath")
-        } catch {
+        }
+        catch {
             $errors.Add("report: $($_.Exception.Message)")
             $ui.Warn("the reports could not be written: $($_.Exception.Message)")
         }
 
         $ui.Footer()
         return @{ ExitCode = (Get-RunExitCode -Grade $grade -Aborted:(Test-SbCancelled)); Grade = $grade; Record = $record }
-    } finally {
+    }
+    finally {
         try { $ui.Close() } catch { }
         if ($session) {
             if ($NoClean) {
                 Write-Host "Scratch kept at $($session.Root) because -NoClean was given. Delete it when you are done."
-            } else {
+            }
+            else {
                 try {
                     $cleaned = Clear-Scratch -Session $session
                     if ($cleaned.Failed -gt 0) {
                         Write-Host "Warning: $($cleaned.Failed) scratch file(s) could not be removed from $($session.Root)."
                         foreach ($e in @($cleaned.Errors)) { Write-Host "  $e" }
                     }
-                } catch { Write-Host "Warning: scratch cleanup failed - remove $($session.Root) by hand. $($_.Exception.Message)" }
+                }
+                catch { Write-Host "Warning: scratch cleanup failed - remove $($session.Root) by hand. $($_.Exception.Message)" }
             }
         }
     }
@@ -760,7 +773,8 @@ if ($MyInvocation.InvocationName -ne '.') {
             Write-Host 'Interrupt received - finishing the current step, then cleaning up.'
         }.GetNewClosure()
         [Console]::add_CancelKeyPress($sbHandler)
-    } catch { $sbHandler = $null }
+    }
+    catch { $sbHandler = $null }
 
     $sbExit = 3
     try {
@@ -769,11 +783,13 @@ if ($MyInvocation.InvocationName -ne '.') {
             -IntegritySizeGB $IntegritySizeGB -SkipIntegrity:$SkipIntegrity -SkipBench:$SkipBench `
             -SkipSmart:$SkipSmart -NoClean:$NoClean
         $sbExit = [int]$sbResult.ExitCode
-    } catch {
+    }
+    catch {
         Write-Host "StorageBench stopped: $($_.Exception.Message)"
         if ($_.ScriptStackTrace) { Write-Verbose $_.ScriptStackTrace }
         $sbExit = 3
-    } finally {
+    }
+    finally {
         if ($sbHandler) { try { [Console]::remove_CancelKeyPress($sbHandler) } catch { } }
     }
     exit $sbExit
